@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"runtime/pprof"
@@ -11,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/avamsi/ergo/assert"
+	"golang.org/x/exp/mmap"
 )
 
 func readInBatches() <-chan []string {
@@ -22,7 +24,10 @@ func readInBatches() <-chan []string {
 	c := make(chan []string, chanBufferSize)
 	go func() {
 		defer close(c)
-		s := bufio.NewScanner(assert.Ok(os.Open("resources/measurements_10_8.txt")))
+		var (
+			f = assert.Ok(mmap.Open("resources/measurements_10_8.txt"))
+			s = bufio.NewScanner(io.NewSectionReader(f, 0, int64(f.Len())))
+		)
 		s.Buffer(make([]byte, 0, readBufferSize), readBufferSize)
 		lines := make([]string, 0, batchSize)
 		for s.Scan() {
