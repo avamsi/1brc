@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
+	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -18,7 +19,7 @@ type result struct {
 	min, max, sum, count int64
 }
 
-func parseMeasurement(m []byte) int64 {
+func parseMeasurement(m string) int64 {
 	negative := m[0] == '-'
 	if negative {
 		m = m[1:]
@@ -34,7 +35,7 @@ func parseMeasurement(m []byte) int64 {
 	case 4:
 		p = int64(m[0])*100 + int64(m[1])*10 + int64(m[3]) - z111
 	default:
-		panic(string(m))
+		panic(m)
 	}
 	if negative {
 		return -p
@@ -44,26 +45,20 @@ func parseMeasurement(m []byte) int64 {
 
 const numStations = 10_000
 
-func processChunk(chunk []byte) map[string]*result {
+func processChunk(chunk string) map[string]*result {
 	var (
 		results = make(map[string]*result, numStations)
-		line    []byte
+		line    string
 	)
-	line, chunk, _ = bytes.Cut(chunk, []byte{'\n'})
+	line, chunk, _ = strings.Cut(chunk, "\n")
 	for len(line) > 0 {
-		name, m, ok := bytes.Cut(line, []byte{';'})
+		name, m, ok := strings.Cut(line, ";")
 		if !ok {
-			panic(string(line))
+			panic(line)
 		}
-		var (
-			// TODO: I think unsafe.String should be okay here since we don't
-			// really modify the underlying bytes, but need to understand mmap
-			// better to be really sure.
-			s = unsafe.String(unsafe.SliceData(name), len(name))
-			p = parseMeasurement(m)
-		)
-		if r, ok := results[s]; !ok {
-			results[s] = &result{p, p, p, 1}
+		p := parseMeasurement(m)
+		if r, ok := results[name]; !ok {
+			results[name] = &result{p, p, p, 1}
 		} else {
 			if p < r.min {
 				r.min = p
@@ -72,7 +67,7 @@ func processChunk(chunk []byte) map[string]*result {
 			}
 			r.sum, r.count = r.sum+p, r.count+10
 		}
-		line, chunk, _ = bytes.Cut(chunk, []byte{'\n'})
+		line, chunk, _ = strings.Cut(chunk, "\n")
 	}
 	return results
 }
@@ -91,18 +86,22 @@ func main() {
 	var (
 		f          = assert.Ok(os.Open("resources/measurements_10_8.txt"))
 		fileSize   = int(assert.Ok(f.Stat()).Size())
-		data       = assert.Ok(syscall.Mmap(int(f.Fd()), 0, fileSize, syscall.PROT_READ, syscall.MAP_PRIVATE))
+		dataBytes  = assert.Ok(syscall.Mmap(int(f.Fd()), 0, fileSize, syscall.PROT_READ, syscall.MAP_PRIVATE))
 		numWorkers = runtime.NumCPU() - 2
 		chunkSize  = fileSize / numWorkers
 		results    = make(chan map[string]*result, numWorkers+2)
 		g          sync.WaitGroup
 	)
-	defer syscall.Munmap(data)
+	defer syscall.Munmap(dataBytes)
 
+	// TODO: I think unsafe.String should be okay here since we don't really
+	// modify the underlying bytes, but need to understand mmap better to be
+	// really sure.
+	data := unsafe.String(unsafe.SliceData(dataBytes), fileSize)
 	for len(data) > chunkSize {
 		var (
-			i     = chunkSize + bytes.IndexByte(data[chunkSize:], '\n')
-			chunk []byte
+			i     = chunkSize + strings.IndexByte(data[chunkSize:], '\n')
+			chunk string
 		)
 		chunk, data = data[:i], data[i+1:]
 		g.Add(1)
