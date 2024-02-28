@@ -3,10 +3,9 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
-	"runtime/pprof"
-	"runtime/trace"
 	"strings"
 	"sync"
 	"syscall"
@@ -72,19 +71,9 @@ func processChunk(chunk string) map[string]*result {
 	return results
 }
 
-func main() {
-	assert.Nil(trace.Start(assert.Ok(os.Create("debug/trace.out"))))
-	assert.Nil(pprof.StartCPUProfile(assert.Ok(os.Create("debug/cpu.prof"))))
-	defer func() {
-		trace.Stop()
-		pprof.StopCPUProfile()
-
-		runtime.GC()
-		assert.Nil(pprof.Lookup("allocs").WriteTo(assert.Ok(os.Create("debug/mem.prof")), 0))
-	}()
-
+func processFile(path string, out io.Writer) {
 	var (
-		f          = assert.Ok(os.Open("resources/measurements_10_8.txt"))
+		f          = assert.Ok(os.Open(path))
 		fileSize   = int(assert.Ok(f.Stat()).Size())
 		dataBytes  = assert.Ok(syscall.Mmap(int(f.Fd()), 0, fileSize, syscall.PROT_READ, syscall.MAP_PRIVATE))
 		numWorkers = runtime.NumCPU() - 2
@@ -92,7 +81,10 @@ func main() {
 		results    = make(chan map[string]*result, numWorkers+2)
 		g          sync.WaitGroup
 	)
-	defer syscall.Munmap(dataBytes)
+	defer func() {
+		assert.Nil(f.Close())
+		assert.Nil(syscall.Munmap(dataBytes))
+	}()
 
 	// TODO: I think unsafe.String should be okay here since we don't really
 	// modify the underlying bytes, but need to understand mmap better to be
@@ -135,7 +127,6 @@ func main() {
 	}
 
 	var b bytes.Buffer
-	defer b.WriteTo(os.Stdout)
 	b.Grow(numStations * 24)
 	b.WriteByte('{')
 	global.Items()(func(name string, r *result) bool {
@@ -145,4 +136,13 @@ func main() {
 	})
 	b.Truncate(b.Len() - 2)
 	b.WriteByte('}')
+	assert.Ok(b.WriteTo(out))
+}
+
+func main() {
+	if args := os.Args[1:]; len(args) == 1 {
+		processFile(args[0], os.Stdout)
+	} else {
+		fmt.Fprintf(os.Stderr, "1brc: got %s, want exactly 1 argument\n", args)
+	}
 }
