@@ -135,9 +135,15 @@ func main() {
 		}
 	}
 
+	var b bytes.Buffer
+	defer b.WriteTo(os.Stdout)
+	b.Grow(numStations * 24)
+	b.WriteByte('{')
 	global.Items()(func(name string, r *result) bool {
-		fmt.Printf("%s=%.1f/%.1f/%.1f\n",
+		fmt.Fprintf(&b, "%s=%.1f/%.1f/%.1f, ",
 			name, float64(r.min)/10, float64(r.sum)/float64(r.count), float64(r.max)/10)
 		return true
 	})
+	b.Truncate(b.Len() - 2)
+	b.WriteByte('}')
 }
