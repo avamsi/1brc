@@ -18,7 +18,6 @@ import (
 func readInBatches() <-chan []string {
 	const (
 		chanBufferSize = 1_000
-		readBufferSize = 1_000_000
 		batchSize      = 1_000
 	)
 	c := make(chan []string, chanBufferSize)
@@ -28,7 +27,6 @@ func readInBatches() <-chan []string {
 			f = assert.Ok(mmap.Open("resources/measurements_10_8.txt"))
 			s = bufio.NewScanner(io.NewSectionReader(f, 0, int64(f.Len())))
 		)
-		s.Buffer(make([]byte, 0, readBufferSize), readBufferSize)
 		lines := make([]string, 0, batchSize)
 		for s.Scan() {
 			lines = append(lines, s.Text())
