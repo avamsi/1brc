@@ -19,9 +19,9 @@ type result struct {
 }
 
 func parseMeasurement(m string) int64 {
-	negative := m[0] == '-'
-	if negative {
-		m = m[1:]
+	sign := int64(1)
+	if m[0] == '-' {
+		sign, m = -1, m[1:]
 	}
 	var p int64
 	const (
@@ -36,10 +36,7 @@ func parseMeasurement(m string) int64 {
 	default:
 		panic(m)
 	}
-	if negative {
-		return -p
-	}
-	return p
+	return sign * p
 }
 
 const numStations = 10_000
