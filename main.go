@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -39,8 +38,31 @@ func readInBatches() <-chan []string {
 }
 
 type result struct {
-	min, max, sum float64
-	count         int
+	min, max, sum, count int64
+}
+
+func parseMeasurement(m string) int64 {
+	negative := m[0] == '-'
+	if negative {
+		m = m[1:]
+	}
+	var p int64
+	const (
+		z11  = int64('0') * 11
+		z111 = int64('0') * 111
+	)
+	switch len(m) {
+	case 3:
+		p = int64(m[0])*10 + int64(m[2]) - z11
+	case 4:
+		p = int64(m[0])*100 + int64(m[1])*10 + int64(m[3]) - z111
+	default:
+		panic(m)
+	}
+	if negative {
+		return -p
+	}
+	return p
 }
 
 func updateResults(lines []string, results map[string]*result) {
@@ -49,7 +71,7 @@ func updateResults(lines []string, results map[string]*result) {
 		if !ok {
 			panic(line)
 		}
-		p := assert.Ok(strconv.ParseFloat(m, 64))
+		p := parseMeasurement(m)
 		if r, ok := results[name]; !ok {
 			results[name] = &result{p, p, p, 1}
 		} else {
@@ -58,7 +80,7 @@ func updateResults(lines []string, results map[string]*result) {
 			} else if p > r.max {
 				r.max = p
 			}
-			r.sum, r.count = r.sum+p, r.count+1
+			r.sum, r.count = r.sum+p, r.count+10
 		}
 	}
 }
@@ -115,7 +137,8 @@ func main() {
 
 	global := reduceResults(results)
 	global.Items()(func(name string, r *result) bool {
-		fmt.Printf("%s=%.1f/%.1f/%.1f\n", name, r.min, r.sum/float64(r.count), r.max)
+		fmt.Printf("%s=%.1f/%.1f/%.1f\n",
+			name, float64(r.min)/10, float64(r.sum)/float64(r.count), float64(r.max)/10)
 		return true
 	})
 }
