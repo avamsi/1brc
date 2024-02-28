@@ -9,6 +9,7 @@ import (
 	"runtime/trace"
 	"sync"
 	"syscall"
+	"unsafe"
 
 	"github.com/avamsi/ergo/assert"
 )
@@ -55,7 +56,10 @@ func processChunk(chunk []byte) map[string]*result {
 			panic(string(line))
 		}
 		var (
-			s = string(name)
+			// TODO: I think unsafe.String should be okay here since we don't
+			// really modify the underlying bytes, but need to understand mmap
+			// better to be really sure.
+			s = unsafe.String(unsafe.SliceData(name), len(name))
 			p = parseMeasurement(m)
 		)
 		if r, ok := results[s]; !ok {
